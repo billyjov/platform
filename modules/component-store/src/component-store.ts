@@ -69,19 +69,30 @@ export class ComponentStore<T extends object> implements OnDestroy {
   // Needs to be after destroy$ is declared because it's used in select.
   readonly state$: Observable<T> = this.select((s) => s);
 
-  constructor(@Optional() @Inject(INITIAL_STATE_TOKEN) defaultState?: T) {
-    // check/call store init hook
-    this.callInitStoreHook();
+  // check/call store init hook
+  private readonly initStoreHook = this.effect(() =>
+    of(null).pipe(($) => {
+      if (isOnStoreInitDefined(this)) {
+        this.ngrxOnStoreInit();
+      }
+      return $;
+    })
+  )();
 
+  // check/call state init hook on first emission of value
+  private readonly initStateHook = this.effect((initialState$: Observable<T>) =>
+    initialState$.pipe(take(1), ($) => {
+      if (isOnStateInitDefined(this)) {
+        this.ngrxOnStateInit();
+      }
+      return $;
+    })
+  )(this.state$);
+
+  constructor(@Optional() @Inject(INITIAL_STATE_TOKEN) defaultState?: T) {
     // State can be initialized either through constructor or setState.
     if (defaultState) {
       this.initState(defaultState);
-    }
-  }
-
-  private callInitStoreHook() {
-    if (isOnStoreInitDefined(this)) {
-      this.ngrxOnStoreInit();
     }
   }
 
@@ -166,13 +177,8 @@ export class ComponentStore<T extends object> implements OnDestroy {
    */
   private initState(state: T): void {
     scheduled([state], queueScheduler).subscribe((s) => {
-      const isInitialized = this.isInitialized;
       this.isInitialized = true;
       this.stateSubject$.next(s);
-
-      if (!isInitialized && isOnStateInitDefined(this)) {
-        this.ngrxOnStateInit();
-      }
     });
   }
 
